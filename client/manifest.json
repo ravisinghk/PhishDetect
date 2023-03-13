@@ -5,7 +5,8 @@
   "permissions": ["activeTab","declarativeContent", "storage", "webNavigation"],
   "background": {
     "scripts": [
-      "js/jquery.js"
+      "js/jquery.js",
+      "js/background.js"
     ],
     "persistent": true
   },

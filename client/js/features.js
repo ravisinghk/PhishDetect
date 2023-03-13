@@ -1,12 +1,14 @@
 const url = window.location.href;
-// const url = "https://www.snapdeal.com/";
+// const url = "http://krakkein-loggions.godaddysites.com/";
 // const url ="https://www.tutorialstonight.com";
 // const url = "https://www.flipkart.com";
 
 const urlDomain = window.location.hostname;
+// const urlDomain = url.match(/^(?:https?:\/\/)?(?:[^@\n]+@)?(?:www\.)?([^:/\n?]+)/)[1];
 // const urlDomain = "flipkart.com";
 
 const urlOrigin = window.location.origin;
+// const urlOrigin = "www." + urlDomain;
 // const urlOrigin = "www.flipkart.com";
 
 const onlyDomain = urlDomain.replace("www.", "");
@@ -18,86 +20,117 @@ console.log("onlyDomain: " + onlyDomain);
 
 let result = {};
 
+function makeRequest(url, method, callback, feature, action = "jsonRequest") {
+  chrome.runtime.sendMessage(
+    { action: action, url, method },
+    function (response) {
+      if (response.data) {
+        // console.log("Hello: "+ feature + " " +response.data)
+        callback(response.data);
+      } else {
+        console.log("Error in: " + feature);
+        // console.error(response.error);s
+      }
+    }
+  );
+}
+
+function makePredictionRequest(
+  url,
+  method,
+  body,
+  callback,
+  feature,
+  action = "predictionRequest"
+) {
+  chrome.runtime.sendMessage(
+    { action: action, url, method, body },
+    function (response) {
+      if (response.data) {
+        // console.log("Hello: "+ feature + " " +response.data)
+        callback(response.data);
+      } else {
+        console.log("Error in: " + feature);
+        // console.error(response.error);
+      }
+    }
+  );
+}
+
 // 1. SSLfinal_State
 const sslFinalState = () => {
   let protocol = url.split(":")[0];
-
+  console.log("protocol: " + protocol);
   if (protocol !== "https") {
     result["A.SSL_Final_State"] = 1;
   } else {
-    fetch(
+    makeRequest(
       `http://127.0.0.1:3000/check-ssl?onlyDomain=${encodeURIComponent(
         onlyDomain
-      )}`
-    )
-      .then((response) => response.json())
-      .then((data) => {
+      )}`,
+      "GET",
+      function (data) {
+        console.log(data);
+
         let ssl_info = data;
         if (ssl_info["isCertAgeValid"] && ssl_info["isIssuerTrusted"]) {
           result["A.SSL_Final_State"] = -1;
         } else {
           result["A.SSL_Final_State"] = 0;
         }
-      })
-      .catch((error) => {
-        result["A.SSL_Final_State"] = 0;
-        console.log("Error in SSL:", error);
-      });
+      },
+      "SSL"
+    );
   }
 };
 
 // 2. URL_of_Anchor;
-
 const urlOfAnchor = () => {
-  fetch(`http://127.0.0.1:3000/check-anchorUrl?url=${encodeURIComponent(url)}`)
-    .then((response) => response.json())
-    .then((data) => {
-      const aTags = Object.values(data);
-      // console.log(aTags);
+  try {
+    let aTags = document.getElementsByTagName("a");
+    // console.log(aTags);
 
-      let phishCount = 0;
-      let legitCount = 0;
-      let allhrefs = "";
+    let phishCount = 0;
+    let legitCount = 0;
+    let allhrefs = "";
 
-      const url_anchor_patt = RegExp(onlyDomain);
-      // const url_anchor_patt = RegExp(onlyDomain, "g");
+    const url_anchor_patt = RegExp(onlyDomain);
+    // const url_anchor_patt = RegExp(onlyDomain, "g");
 
-      for (let i = 0; i < aTags.length; i++) {
-        let hrefs = aTags[i];
-        if (!hrefs) continue;
-        allhrefs += hrefs + "       ";
-        if (url_anchor_patt.test(hrefs)) {
-          legitCount++;
-        } else if (
-          hrefs.charAt(0) == "#" ||
-          (hrefs.charAt(0) == "/" && hrefs.charAt(1) != "/") ||
-          (hrefs.charAt(0) == "." &&
-            hrefs.charAt(1) == "/" &&
-            hrefs.charAt(2) != "/")
-        ) {
-          legitCount++;
-        } else {
-          phishCount++;
-        }
-      }
-      let totalCount = phishCount + legitCount;
-      let outRequest = (phishCount / totalCount) * 100;
-
-      // console.log("Legit: "+legitCount)
-      // console.log("Phish: "+phishCount)
-
-      if (outRequest < 31) {
-        result["B.Anchor"] = -1;
-      } else if (outRequest >= 31 && outRequest <= 67) {
-        result["B.Anchor"] = 0;
+    for (let i = 0; i < aTags.length; i++) {
+      let hrefs = aTags[i].getAttribute("href");
+      if (!hrefs) continue;
+      allhrefs += hrefs + "       ";
+      if (url_anchor_patt.test(hrefs)) {
+        legitCount++;
+      } else if (
+        hrefs.charAt(0) == "#" ||
+        (hrefs.charAt(0) == "/" && hrefs.charAt(1) != "/") ||
+        (hrefs.charAt(0) == "." &&
+          hrefs.charAt(1) == "/" &&
+          hrefs.charAt(2) != "/")
+      ) {
+        legitCount++;
       } else {
-        result["B.Anchor"] = 1;
+        phishCount++;
       }
-    })
-    .catch((error) => {
-      console.log("Error in URL Anchor: " + error);
+    }
+    let totalCount = phishCount + legitCount;
+    let outRequest = (phishCount / totalCount) * 100;
+
+    // console.log("Legit: "+legitCount)
+    // console.log("Phish: "+phishCount)
+
+    if (outRequest < 31) {
+      result["B.Anchor"] = -1;
+    } else if (outRequest >= 31 && outRequest <= 67) {
       result["B.Anchor"] = 0;
-    });
+    } else {
+      result["B.Anchor"] = 1;
+    }
+  } catch (error) {
+    console.log("Error in Anchor Url: " + error);
+  }
 };
 
 // 3. Prefix_Suffix;
@@ -155,45 +188,40 @@ const havingSubDomain = () => {
 
 // 6. Request_URL;
 const requestUrl = () => {
-  fetch(`http://127.0.0.1:3000/check-reqUrl?url=${encodeURIComponent(url)}`)
-    .then((response) => response.json())
-    .then((data) => {
-      const imgTags = Object.values(data);
+  try {
+    var imgTags = document.getElementsByTagName("img");
+    var phishCount = 0;
+    var legitCount = 0;
 
-      var phishCount = 0;
-      var legitCount = 0;
+    const req_url_patt = RegExp(onlyDomain);
 
-      const req_url_patt = RegExp(onlyDomain);
+    for (var i = 0; i < imgTags.length; i++) {
+      let src = imgTags[i].getAttribute("src");
 
-      for (var i = 0; i < imgTags.length; i++) {
-        let src = imgTags[i];
-
-        if (!src) continue;
-        if (req_url_patt.test(src)) {
-          legitCount++;
-        } else if (src.charAt(0) == "/" && src.charAt(1) != "/") {
-          legitCount++;
-        } else {
-          phishCount++;
-        }
-      }
-
-      var totalCount = phishCount + legitCount;
-      var outRequest = (phishCount / totalCount) * 100;
-      //alert(outRequest);
-
-      if (outRequest < 22) {
-        result["F.Request URL"] = -1;
-      } else if (outRequest >= 22 && outRequest < 61) {
-        result["F.Request URL"] = 0;
+      if (!src) continue;
+      if (req_url_patt.test(src)) {
+        legitCount++;
+      } else if (src.charAt(0) == "/" && src.charAt(1) != "/") {
+        legitCount++;
       } else {
-        result["F.Request URL"] = 1;
+        phishCount++;
       }
-    })
-    .catch((error) => {
-      console.log("Error in Request Url: " + error);
+    }
+
+    var totalCount = phishCount + legitCount;
+    var outRequest = (phishCount / totalCount) * 100;
+    //alert(outRequest);
+
+    if (outRequest < 22) {
+      result["F.Request URL"] = -1;
+    } else if (outRequest >= 22 && outRequest < 61) {
       result["F.Request URL"] = 0;
-    });
+    } else {
+      result["F.Request URL"] = 1;
+    }
+  } catch (error) {
+    console.log("Error in Request Url: " + error);
+  }
 };
 
 // 7. Links_in_tags;
@@ -251,13 +279,14 @@ const linksInTags = () => {
 
 // 8. Domain_registration_length , 11. Age of Domain, 15. DNS Record
 const whoisInfo = () => {
-  fetch(
+  makeRequest(
     `http://127.0.0.1:3000/check-whois?onlyDomain=${encodeURIComponent(
       onlyDomain
-    )}`
-  )
-    .then((response) => response.json())
-    .then((data) => {
+    )}`,
+    "GET",
+    function (data) {
+      // console.log(data);
+
       // console.log(data);
 
       // if data sent by server is -1 then the given domain is not registered
@@ -299,13 +328,9 @@ const whoisInfo = () => {
           result["K.Age of Domain"] = -1;
         }
       }
-    })
-    .catch((error) => {
-      result["H.Domain_Reg_Length"] = -1;
-      result["K.Age of Domain"] = -1;
-      result["O.DNS Record"] = -1;
-      console.error("Error at Whois: " + error);
-    });
+    },
+    "WhoIs"
+  );
 };
 
 function difference(date1, date2) {
@@ -343,29 +368,21 @@ const sfh = () => {
 
 // 10. Google_Index;
 const googleIndex = () => {
-  const google_index_options = {
-    mode: "no-cors",
-  };
-
-  fetch(
+  makeRequest(
     `http://127.0.0.1:3000/check-index-new?onlyDomain=${encodeURIComponent(
       onlyDomain
-    )}`
-  )
-    .then((response) => response.text())
-    .then((text) => {
-      // console.log(text);
-      if (text == "1") {
+    )}`,
+    "GET",
+    function (data) {
+      // console.log(data);
+      if (data == "1") {
         result["J.Google_Index"] = 1;
       } else {
         result["J.Google_Index"] = -1;
       }
-      // console.log(text);
-    })
-    .catch((error) => {
-      result["J.Google_Index"] = -1;
-      console.log("Error in Google Index: " + error);
-    });
+    },
+    "Google_Index"
+  );
 };
 
 // 12. Page_Rank;
@@ -417,15 +434,15 @@ const havingIpAddress = () => {
 const statsReport = () => {
   let ip_address = "";
 
-  fetch(
+  makeRequest(
     `http://127.0.0.1:3000/check-dns?onlyDomain=${encodeURIComponent(
       onlyDomain
-    )}`
-  )
-    .then((response) => response.text())
-    .then((text) => {
-      // console.log(text);
-      ip_address = text;
+    )}`,
+    "GET",
+    function (data) {
+      // ip_address = text;
+      console.log("Data from dns ip: " + data);
+      ip_address = data;
 
       var re =
         /at.ua|usa.cc|baltazarpresentes.com.br|pe.hu|esy.es|hol.es|sweddy.com|myjino.ru|96.lt|ow.ly/;
@@ -442,10 +459,40 @@ const statsReport = () => {
       } else {
         result["N.Statistical Report"] = -1;
       }
-    })
-    .catch((error) => {
-      console.error("Error in Stats Report: " + error);
-    });
+    },
+    "Stats_Report",
+    "textRequest"
+  );
+
+  // fetch(
+  //   `http://127.0.0.1:3000/check-dns?onlyDomain=${encodeURIComponent(
+  //     onlyDomain
+  //   )}`
+  // )
+  //   .then((response) => response.text())
+  //   .then((text) => {
+  //     // console.log(text);
+  //     ip_address = text;
+
+  //     var re =
+  //       /at.ua|usa.cc|baltazarpresentes.com.br|pe.hu|esy.es|hol.es|sweddy.com|myjino.ru|96.lt|ow.ly/;
+  //     var url_match = url.match(re);
+
+  //     var ip_re =
+  //       /146.112.61.108|213.174.157.151|121.50.168.88|192.185.217.116|78.46.211.158|181.174.165.13|46.242.145.103|121.50.168.40|83.125.22.219|46.242.145.98|107.151.148.44|107.151.148.107|64.70.19.203|199.184.144.27|107.151.148.108|107.151.148.109|119.28.52.61|54.83.43.69|52.69.166.231|216.58.192.225|118.184.25.86|67.208.74.71|23.253.126.58|104.239.157.210|175.126.123.219|141.8.224.221|10.10.10.10|43.229.108.32|103.232.215.140|69.172.201.153|216.218.185.162|54.225.104.146|103.243.24.98|199.59.243.120|31.170.160.61|213.19.128.77|62.113.226.131|208.100.26.234|195.16.127.102|195.16.127.157|34.196.13.28|103.224.212.222|172.217.4.225|54.72.9.51|192.64.147.141|198.200.56.183|23.253.164.103|52.48.191.26|52.214.197.72|87.98.255.18|209.99.17.27|216.38.62.18|104.130.124.96|47.89.58.141|78.46.211.158|54.86.225.156|54.82.156.19|37.157.192.102|204.11.56.48|110.34.231.42/;
+  //     var ip_match = ip_address.match(ip_re);
+
+  //     if (url_match) {
+  //       result["N.Statistical Report"] = 1;
+  //     } else if (ip_match) {
+  //       result["N.Statistical Report"] = 1;
+  //     } else {
+  //       result["N.Statistical Report"] = -1;
+  //     }
+  //   })
+  //   .catch((error) => {
+  //     console.error("Error in Stats Report: " + error);
+  //   });
 };
 
 // 15. DNSRecord; Done above
@@ -509,9 +556,10 @@ const httpsToken = () => {
 
 // 22. Links_pointing_to_page;
 const LinksPointingToPage = (r) => {
-  fetch(`http://127.0.0.1:3000/check-links?url=${encodeURIComponent(url)}`)
-    .then((response) => response.json())
-    .then((data) => {
+  makeRequest(
+    `http://127.0.0.1:3000/check-links?url=${encodeURIComponent(url)}`,
+    "GET",
+    function (data) {
       let numBacklinks = parseInt(data);
       // console.log("Number of Links Pointing to page: " + numBacklinks);
       if (numBacklinks >= 0 && numBacklinks <= 3) {
@@ -524,14 +572,11 @@ const LinksPointingToPage = (r) => {
         result["V.Links_Pointing"] = -1;
       }
 
-      // r();
-    })
-    .catch((error) => {
-      console.log("Error in Links Pointing: " + error);
-    })
-    .finally(() => {
       r();
-    });
+    },
+    "LinksPointingToPage",
+    "textRequest"
+  );
 };
 
 // 23. Redirect;
@@ -544,7 +589,7 @@ const redirect = () => {
 };
 
 // Calling of Functions
-sslFinalState();
+// sslFinalState();
 urlOfAnchor();
 prefixSuffix();
 webTraffic();
@@ -566,7 +611,7 @@ httpsToken();
 LinksPointingToPage(handleResult);
 redirect();
 
-// console.log(result);
+console.log(result);
 
 function handleResult() {
   console.log(result);
@@ -598,27 +643,50 @@ function handleResult() {
 
   console.log(result_array);
 
-  for(let i = 0; i < result_array.length; i++ ){
-    if(result_array[i] == undefined){
+  for (let i = 0; i < result_array.length; i++) {
+    if (result_array[i] == undefined) {
       result_array[i] = 0;
     }
   }
 
-  fetch("http://localhost:8000/predict", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+  // console.log("hfxhfxhxhhgiugi")
+
+  makePredictionRequest(
+    "http://localhost:8000/predict",
+    "POST",
+    JSON.stringify(result_array),
+    function (data) {
+      // console.log(data);
+      const final_prediction = parseInt(data.prediction);
+      console.log("Final Verdict: " + final_prediction);
+      if (final_prediction == 1) {
+        alert("This is a Phishing Website!!");
+      }
     },
-    body: JSON.stringify(result_array),
-  })
-    .then(function (response) {
-      return response.json();
-    })
-    .then(function (predictions) {
-      const x = predictions;
-      console.log("Final Verdict: " + x)
-    })
-    .catch(function (error) {
-      console.log("Yeh Error: "+error);
-    });
+    "Final_Prediction"
+  );
+
+  
+  // fetch("http://localhost:8000/predict", {
+  //   method: "POST",
+  //   mode: "no-cors",
+  //   headers: {
+  //     "Content-Type": "application/json",
+  //   },
+  //   body: JSON.stringify(result_array),
+  // })
+  //   .then((response) => response.json())
+  //   .then((data) => {
+  //     // for (const key in data) {
+  //     //   console.log(`${key}: ${data[key]}`);
+  //     // }
+  //     const final_prediction = parseInt(data.prediction);
+  //     console.log("Final Verdict: " + final_prediction);
+  //     if (final_prediction == 1) {
+  //       alert("This is a Phishing Website!!");
+  //     }
+  //   })
+  //   .catch(function (error) {
+  //     console.log("Final Error: " + error);
+  //   });
 }
