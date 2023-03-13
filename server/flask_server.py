@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pickle
+import numpy as np
 
 # Load the model
 with open('model.sav', 'rb') as f:
@@ -12,17 +13,15 @@ CORS(app)
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    # Get the data from the request
-    data = request.get_json().reshape(1, -1)
-
-    # Use the model to make predictions
-    predictions = model.predict(data)
-
-    l = [predictions.tolist()]
-
-    print(l)
-    # Return the predictions as a JSON object
-    return jsonify(l)
+    print("Hello")
+    data = request.get_json(force=True)
+    print(type(data))
+    prediction = model.predict([np.array(data)])
+    output = prediction[0]
+    print(output)
+    output_json = {'prediction': str(output)}  # convert to str
+    # return jsonify(output_json)
+    return output_json
 
 
 if __name__ == '__main__':

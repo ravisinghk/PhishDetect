@@ -43,74 +43,87 @@ app.get("/", (req, res) => {
 
 // SSL Certificate
 app.get("/check-ssl", async (req, res) => {
-  ssl_info = {};
+  try {
+    ssl_info = {};
 
-  const trusted_issuers = [
-    "GeoTrust",
-    "GoDaddy",
-    "Network Solutions",
-    "Thawte",
-    "Comodo",
-    "VeriSign",
-    "RapidSSL",
-    "Sectigo",
-    "Digicert",
-    "Actalis",
-    "Certum",
-    "Entrust",
-    "GlobalSign",
-    "SecureTrust",
-    "UserTrust",
-    "R3",
-    "IdenTrust",
-    "Symantec",
-    "Cloudflare",
-    "Amazon",
-  ];
+    const trusted_issuers = [
+      "GeoTrust",
+      "GoDaddy",
+      "Network Solutions",
+      "Thawte",
+      "Comodo",
+      "VeriSign",
+      "RapidSSL",
+      "Sectigo",
+      "Digicert",
+      "Actalis",
+      "Certum",
+      "Entrust",
+      "GlobalSign",
+      "SecureTrust",
+      "UserTrust",
+      "R3",
+      "IdenTrust",
+      "Symantec",
+      "Cloudflare",
+      "Amazon",
+      "GTS",
+    ];
 
-  let hostname = "www." + req.query.onlyDomain;
-  https.get(`https://${hostname}`, async (response) => {
-    const certificate = await response.socket.getPeerCertificate();
-    // console.log(certificate)
-    if (certificate && certificate.issuer && certificate.issuer.CN) {
-      // Calculating certificate age
-      let valid_from_date = new Date(certificate.valid_from);
-      let valid_to_date = new Date(certificate.valid_to);
-      let certificate_age = valid_to_date - valid_from_date;
-      let certificate_age_months = (
-        certificate_age /
-        (1000 * 60 * 60 * 24 * 30.44)
-      ).toFixed(0);
-      // console.log(certificate_age_months);
-      if (certificate_age_months >= 3) {
-        ssl_info["isCertAgeValid"] = true;
-      } else {
-        ssl_info["isCertAgeValid"] = false;
-      }
-
-      // Is Issuer Trusted or not
-
-      let issuer_name = certificate.issuer.CN;
-      // console.log(issuer_name)
-      for (let i in trusted_issuers) {
-        if (
-          issuer_name.toLowerCase().includes(trusted_issuers[i].toLowerCase())
-        ) {
-          ssl_info["isIssuerTrusted"] = true;
-          break;
+    let hostname = "www." + req.query.onlyDomain;
+    console.log(hostname);
+    https.get(`https://${hostname}`, async (response) => {
+      // const certificate = await response.socket.getPeerCertificate();
+      const certificate = await response.connection.getPeerCertificate();
+      // console.log(certificate)
+      if (certificate && certificate.issuer && certificate.issuer.CN) {
+        // Calculating certificate age
+        let valid_from_date = new Date(certificate.valid_from);
+        let valid_to_date = new Date(certificate.valid_to);
+        let certificate_age = valid_to_date - valid_from_date;
+        let certificate_age_months = (
+          certificate_age /
+          (1000 * 60 * 60 * 24 * 30.44)
+        ).toFixed(0);
+        // console.log(certificate_age_months);
+        if (certificate_age_months >= 3) {
+          ssl_info["isCertAgeValid"] = true;
         } else {
-          ssl_info["isIssuerTrusted"] = false;
+          ssl_info["isCertAgeValid"] = false;
         }
+
+        // Is Issuer Trusted or not
+
+        let issuer_name = certificate.issuer.CN;
+        // console.log(issuer_name)
+        console.log("*****************************************");
+        for (let i in trusted_issuers) {
+          if (
+            issuer_name.toLowerCase().includes(trusted_issuers[i].toLowerCase())
+          ) {
+            ssl_info["isIssuerTrusted"] = true;
+            break;
+          } else {
+            ssl_info["isIssuerTrusted"] = false;
+          }
+        }
+      } else {
+        console.log("BBBBingo");
+        ssl_info["isCertAgeValid"] = false;
+        ssl_info["isIssuerTrusted"] = false;
       }
-    } else {
-      ssl_info["isCertAgeValid"] = false;
-      ssl_info["isIssuerTrusted"] = false;
-    }
-    res.send(ssl_info);
-  });
+      res.send(ssl_info);
+    });
+  } catch (error) {
+    console.error("Error in SSL: " + err);
+    ssl_info["isCertAgeValid"] = false;
+    ssl_info["isIssuerTrusted"] = false;
+    // Send an appropriate error response to the client
+    res.status(500).send("Something went wrong in SSL!");
+  }
 });
 
-// Domain Registration Length
+// Domain Registration Length: Who is
 app.get("/check-whois", async (req, res) => {
   let onlyDomain = req.query.onlyDomain ? req.query.onlyDomain : "";
   // let onlyDomain = "gov.uk";
@@ -153,13 +166,13 @@ function parseWhoisData(data) {
 // Statistical Report
 app.get("/check-dns", async (req, res) => {
   let onlyDomain = req.query.onlyDomain;
-  // console.log("idsbv -> "+ onlyDomain)
+  console.log("idsbv -> " + onlyDomain);
   dns.lookup(onlyDomain, (err, address, family) => {
     if (err) {
       console.log("Error in check dns " + err);
       // throw err;
     } else {
-      // console.log("The IP address of example.com is: " + address);
+      console.log(`The IP address of ${onlyDomain} is:` + address + "check");
       res.send(address);
     }
   });
@@ -201,15 +214,15 @@ app.get("/check-index-new", async (req, res) => {
     console.log("Number of results in", onlyDomain, ":", numlinks);
     if (numlinks == 0) {
       res.send("1");
-      console.log("The website is not indexed by Google");
+      console.log(`The website ${onlyDomain} is not indexed by Google`);
     } else {
       res.send("-1");
-      console.log("The website is indexed by Google");
+      console.log(`The website ${onlyDomain} is indexed by Google`);
     }
     await browser.close();
   } catch (error) {
     res.send("-1");
-    console.log("Error Links Pointing: " + error);
+    console.log("Error in Google Index: " + error);
   }
 });
 
@@ -238,52 +251,6 @@ app.get("/check-links", async (req, res) => {
     res.send("-1");
     console.log("Error Links Pointing: " + error);
   }
-});
-
-// Url of Anchor
-app.get("/check-anchorUrl", async (req, res) => {
-  let fullUrl = req.query.url
-  const axiosResponse = await axios.request({
-    method: "GET",
-    url: fullUrl,
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-    },
-  });
-
-  const $ = cheerio.load(axiosResponse.data);
-  const allATags = $("a");
-  const aTagArray = allATags
-    .map((index, element) => {
-      return $(element).attr("href");
-    })
-    .get();
-  res.send(aTagArray)
-});
-
-// Request Url
-app.get("/check-reqUrl", async (req, res) => {
-  let fullUrl = req.query.url;
-  const axiosResponse = await axios.request({
-    method: "GET",
-    url: fullUrl,
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-    },
-  });
-
-  const $ = cheerio.load(axiosResponse.data);
-  const allImgTags = $("img");
-  const imgTagArray = allImgTags
-    .map((index, element) => {
-      return $(element).attr("src");
-    })
-    .get();
-
-  // console.log(imgTagArray);
-  res.send(imgTagArray);
 });
 
 //Start your server on a specified port
